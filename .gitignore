@@ -1,0 +1,29 @@
+# Python bytecode and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Python environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+credentials.*
+aws-credentials*
+
+# Local editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
