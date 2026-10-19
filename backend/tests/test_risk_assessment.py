@@ -1,6 +1,6 @@
 import unittest
 
-from risk_assessment import RiskThresholds, assess_risk
+from risk_assessment import RiskThresholds, assess_risk, explain_risk
 
 
 class RiskAssessmentTests(unittest.TestCase):
@@ -21,6 +21,8 @@ class RiskAssessmentTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             RiskThresholds(moderate=float("nan"), high=6)
+        with self.assertRaises(ValueError):
+            RiskThresholds(moderate=10**10000, high=10**10001)
 
     def test_rejects_invalid_magnitude(self):
         with self.assertRaises(ValueError):
@@ -29,6 +31,22 @@ class RiskAssessmentTests(unittest.TestCase):
             assess_risk(True)
         with self.assertRaises(ValueError):
             assess_risk(float("inf"))
+        with self.assertRaises(ValueError):
+            assess_risk(10**10000)
+
+    def test_explains_classification_rule_and_reason(self):
+        result = explain_risk(5.0)
+
+        self.assertEqual(result["level"], "moderate")
+        self.assertEqual(result["rule"], "magnitude_thresholds_v1")
+        self.assertIn("moderate threshold", result["reason"])
+        self.assertEqual(result["thresholds"], {"moderate": 4.0, "high": 6.0})
+
+    def test_missing_magnitude_is_unknown_not_low(self):
+        result = explain_risk(None)
+
+        self.assertEqual(result["level"], "unknown")
+        self.assertIn("unavailable", result["reason"])
 
 
 if __name__ == "__main__":

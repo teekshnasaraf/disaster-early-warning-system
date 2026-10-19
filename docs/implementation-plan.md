@@ -6,7 +6,7 @@ This college project explores a serverless workflow that consumes public earthqu
 
 The objective is an auditable, testable educational prototype, not an official warning service. It must never claim that routes are safe or that a magnitude-only heuristic predicts local impact. Deployment for real emergencies requires current authoritative shelter and hazard data, hazard-aware routing, accessibility and capacity checks, and validation by emergency authorities.
 
-**Implemented in this repository now:** local Python standard-library fetching and normalization of USGS GeoJSON earthquake events; configurable heuristic risk classification; configurable preliminary impact-radius and bounding-box estimation using spherical geometry; offline unit tests. No AWS resources, routes, frontend, or notifications are implemented.
+**Implemented in this repository now:** local Python standard-library fetching and normalization of USGS GeoJSON observations with source IDs, integer epoch-millisecond and UTC ISO-8601 timestamps, and optional depth; configurable freshness and duplicate policy; separate explainable heuristic risk classification; configurable preliminary impact-radius and bounding-box estimation using spherical geometry; offline unit tests. No AWS resources, routes, frontend, or notifications are implemented.
 
 ## Objectives and requirements
 
@@ -14,7 +14,9 @@ The objective is an auditable, testable educational prototype, not an official w
 
 - Fetch a configurable USGS GeoJSON earthquake feed and validate its structure.
 - Normalize stable event identifiers, magnitude, place, timestamp, and longitude/latitude.
+- Track observation source identity and UTC event/update timestamps; explicitly report stale, duplicate, and rejected records using configurable policy.
 - Apply an explicitly configurable and documented initial risk heuristic, separate from data acquisition.
+- Produce explainable risk results; missing magnitude must remain unknown rather than low.
 - Estimate a preliminary geographic radius with caller-supplied heuristic coefficients and determine candidate proximity; later phases may incorporate authoritative impact data, verified destinations, candidate routes, and reviewed notifications.
 - Provide separate scheduled-monitoring and API Gateway request paths with shared, idempotent processing logic.
 - Record processing outcomes and prevent duplicate notifications on retries.
@@ -50,10 +52,12 @@ docs/
 backend/
   src/
     disaster_fetcher.py
+    event_quality.py
     impact_estimation.py
     risk_assessment.py
   tests/
     test_disaster_fetcher.py
+    test_event_quality.py
     test_impact_estimation.py
     test_risk_assessment.py
 frontend/  # future phase; create when an interface is approved
@@ -81,11 +85,11 @@ The current repository contains the root documentation and the listed backend mo
 
 ### Phase 3: Local earthquake data processing (implemented)
 
-**Deliverables:** configurable USGS feed fetcher, validated normalized events, independent configurable risk heuristic, offline mocked unit tests.
+**Deliverables:** configurable USGS feed fetcher, validated normalized observations with source IDs and UTC event/update timestamps, independent configurable risk heuristic with an explainable rule/reason result and `unknown` for missing magnitude, offline mocked unit tests.
 
 **AWS resources:** None.
 
-**Acceptance criteria:** handles network failure, HTTP errors, invalid JSON, malformed structures, and missing/invalid fields; representative GeoJSON normalizes correctly; tests make no network requests; risk thresholds are configurable and identified as a non-scientific project heuristic.
+**Acceptance criteria:** handles network failure, HTTP errors, invalid JSON, malformed structures, and missing/invalid fields; source IDs are explicit; timestamps are integer epoch milliseconds plus UTC ISO-8601, and malformed/out-of-range timestamps are rejected; missing magnitude is represented as unknown, not low; tests make no network requests; risk thresholds are configurable and identified as a non-scientific project heuristic.
 
 ### Phase 4: Risk configuration and impact estimation (partially implemented)
 
@@ -96,6 +100,14 @@ The current repository contains the root documentation and the listed backend mo
 **AWS resources:** None initially; managed configuration storage is considered only if deployment requires it.
 
 **Acceptance criteria:** the current geometry and input validation are deterministic and tested; future impact-model assumptions, uncertainty, freshness, and provenance must also be tested and documented. No scientific or official-warning claim without appropriate validation.
+
+### Phase 4A: Event freshness, provenance, and duplicate policy (implemented)
+
+**Deliverables:** source-scoped identity `(source, source_id)`; UTC timestamp validation; configurable maximum event age and future clock tolerance; duplicate resolution by newest catalogue update timestamp with event-origin-time fallback; separate accepted, stale, duplicate, and rejected results. Freshness is based on event-origin time so a later catalogue revision cannot make an old earthquake appear recent. Risk explanations preserve observed values separately from derived labels and return unknown when magnitude is absent. The quality processor is currently a separate local step that callers invoke after fetching; AWS orchestration is future work.
+
+**AWS resources:** None. The processor is in-memory and does not persist duplicate state between executions.
+
+**Acceptance criteria:** deterministic offline tests cover stale boundaries, source-scoped duplicate IDs, update-version selection, missing identities/timestamps, invalid/future timestamps, malformed records, and explainable unknown risk. No magnitude-only result is presented as proof of damage, imminent danger, or route safety.
 
 ### Phase 5: Destination-data and safety policy (planned)
 
@@ -155,11 +167,11 @@ The current repository contains the root documentation and the listed backend mo
 
 ### USGS API
 
-Use an official USGS GeoJSON feed URL configured without credentials. Set a finite timeout, send a descriptive user agent where appropriate, validate content and schema, retain event IDs and update times, and respect public service capacity with conservative cadence and exponential backoff/jitter on transient failures. Do not retry permanent client errors indefinitely. Never assume every earthquake is represented immediately or that feed magnitude is sufficient for impact assessment.
+Use an official USGS GeoJSON feed URL configured without credentials. Set a finite timeout, send a descriptive user agent where appropriate, validate content and schema, retain source IDs and event/update timestamps in UTC, and respect public service capacity with conservative cadence and exponential backoff/jitter on transient failures. The local policy uses origin time for freshness and catalogue update time only to choose among duplicate versions. Its configurable age/skew limits are data-quality policy, not hazard thresholds. Do not retry permanent client errors indefinitely. Never assume every earthquake is represented immediately or that feed magnitude is sufficient for impact assessment.
 
 ### Risk and geographic impact
 
-Keep ingestion, risk classification, and impact estimation separate. The implemented radius heuristic is `(base_radius_km + magnitude_scale_km * max(magnitude, 0)) / (1 + depth_km / depth_scale_km)`, with depth treated as zero when absent. Its coefficients are explicitly supplied by the caller and are demonstration parameters, not invented scientific thresholds. The bounding box uses a spherical Earth envelope; longitude bounds wrap at the antimeridian and expand to all longitudes when a pole is reached. Candidate membership uses great-circle haversine distance. These outputs identify geometry relative to the heuristic only. Before any geographic recommendation, select and validate authoritative shaking/intensity or hazard data; account for distance, depth, local conditions, uncertainty, data freshness, and model coverage. Fail closed or require human review when material inputs are missing.
+Keep source observations, freshness/deduplication decisions, risk classification, and impact estimation separate. `explain_risk()` includes a rule ID, reason, inputs, thresholds, and a level; a missing magnitude is unknown. The legacy `assess_risk()` remains for callers that have a validated magnitude. Neither API creates an official warning. The implemented radius heuristic is `(base_radius_km + magnitude_scale_km * max(magnitude, 0)) / (1 + depth_km / depth_scale_km)`, with depth treated as zero when absent. Its coefficients are explicitly supplied by the caller and are demonstration parameters, not invented scientific thresholds. The bounding box uses a spherical Earth envelope; longitude bounds wrap at the antimeridian and expand to all longitudes when a pole is reached. Candidate membership uses great-circle haversine distance. These outputs identify geometry relative to the heuristic only. Before any geographic recommendation, select and validate authoritative shaking/intensity or hazard data; account for distance, depth, local conditions, uncertainty, data freshness, and model coverage. Fail closed or require human review when material inputs are missing.
 
 ### Destinations and routes
 
@@ -178,6 +190,7 @@ Use EventBridge Scheduler for independent periodic polling with a modest configu
 - **Errors and retries:** classify transient network/5xx/rate-limit failures separately from invalid input/schema and permanent HTTP failures. Use bounded exponential backoff with jitter; honor service retry guidance. Set timeouts at each network/service boundary and return actionable, non-sensitive errors.
 - **Logging/monitoring:** structured logs with correlation, invocation, and event IDs; metrics for fetch success/failure, events processed, deduplication, routing outcomes, and notification delivery. Avoid secrets and personal data; set retention and alarms.
 - **Duplicate prevention:** persist processed event IDs plus relevant update/version state and notification idempotency keys. Define how revised USGS event magnitude/location updates are processed without duplicate messaging. Use conditional writes/transactions where available.
+- **Current local data quality:** `event_quality.py` is a pure in-memory processor; it validates timestamps, uses configurable age/skew limits, and resolves duplicate versions deterministically. It does not persist seen IDs across separate runs, so durable idempotency remains a deployment-phase requirement.
 - **IAM/security:** separate deployment and runtime roles; least-privilege resource-scoped permissions for logs, state, Location, and SNS; protect API Gateway with appropriate authentication, authorization, throttling, and TLS; use managed secrets only if a future integration requires them. Do not commit `.env`, credentials, tokens, keys, or generated sensitive data.
 - **Unit tests:** standard-library `unittest` for parsing, validation, threshold boundaries, malformed responses, timeouts, HTTP errors, and duplicate logic, with mocked HTTP/AWS boundaries.
 - **Integration tests:** deploy to a dedicated test environment with controlled AWS resources, test IAM and service contracts, use test-only SNS subscriptions, and clean up afterward. Keep default tests offline and free of AWS cost.

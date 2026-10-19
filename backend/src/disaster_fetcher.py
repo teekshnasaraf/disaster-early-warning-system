@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -15,6 +16,15 @@ DEFAULT_TIMEOUT_SECONDS = 10.0
 
 class EarthquakeFeedError(Exception):
     """Raised when the earthquake feed cannot be fetched or parsed."""
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _normalize_event(feature: Any) -> dict[str, Any]:
@@ -31,29 +41,42 @@ def _normalize_event(feature: Any) -> dict[str, Any]:
         raise EarthquakeFeedError("Earthquake event is missing a valid id")
 
     magnitude = properties.get("mag")
-    if (
-        isinstance(magnitude, bool)
-        or not isinstance(magnitude, (int, float))
-        or not math.isfinite(magnitude)
-    ):
+    if magnitude is not None and not _is_finite_number(magnitude):
         raise EarthquakeFeedError(f"Earthquake event {event_id} has an invalid magnitude")
 
     timestamp = properties.get("time")
     if (
-        isinstance(timestamp, bool)
-        or not isinstance(timestamp, (int, float))
-        or not math.isfinite(timestamp)
+        not _is_finite_number(timestamp)
+        or (isinstance(timestamp, float) and not timestamp.is_integer())
     ):
         raise EarthquakeFeedError(f"Earthquake event {event_id} has an invalid timestamp")
+    timestamp_ms = int(timestamp)
+    try:
+        timestamp_utc = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError) as error:
+        raise EarthquakeFeedError(f"Earthquake event {event_id} has an out-of-range timestamp") from error
+
+    updated = properties.get("updated")
+    if updated is None:
+        updated_ms = timestamp_ms
+    elif (
+        not _is_finite_number(updated)
+        or (isinstance(updated, float) and not updated.is_integer())
+    ):
+        raise EarthquakeFeedError(f"Earthquake event {event_id} has an invalid update timestamp")
+    else:
+        updated_ms = int(updated)
+    try:
+        updated_utc = datetime.fromtimestamp(updated_ms / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError) as error:
+        raise EarthquakeFeedError(f"Earthquake event {event_id} has an out-of-range update timestamp") from error
 
     coordinates = geometry.get("coordinates")
     if not isinstance(coordinates, list) or len(coordinates) < 2:
         raise EarthquakeFeedError(f"Earthquake event {event_id} has invalid coordinates")
     longitude, latitude = coordinates[:2]
     if any(
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
+        not _is_finite_number(value)
         for value in (longitude, latitude)
     ):
         raise EarthquakeFeedError(f"Earthquake event {event_id} has invalid coordinates")
@@ -64,11 +87,23 @@ def _normalize_event(feature: Any) -> dict[str, Any]:
     if not isinstance(place, str):
         place = "Unknown location"
 
+    depth = coordinates[2] if len(coordinates) > 2 else None
+    if depth is not None and (
+        not _is_finite_number(depth)
+    ):
+        depth = None
+
     return {
         "id": event_id.strip(),
-        "magnitude": float(magnitude),
+        "source": "USGS",
+        "source_id": event_id.strip(),
+        "magnitude": float(magnitude) if magnitude is not None else None,
         "place": place,
-        "timestamp_ms": int(timestamp),
+        "timestamp_ms": timestamp_ms,
+        "timestamp_utc": timestamp_utc.isoformat().replace("+00:00", "Z"),
+        "updated_ms": updated_ms,
+        "updated_utc": updated_utc.isoformat().replace("+00:00", "Z"),
+        "depth_km": float(depth) if depth is not None else None,
         "coordinates": {"longitude": float(longitude), "latitude": float(latitude)},
     }
 
@@ -93,7 +128,7 @@ def fetch_earthquakes(
     selected_url = feed_url or os.environ.get("USGS_FEED_URL", DEFAULT_FEED_URL)
     if not isinstance(selected_url, str) or not selected_url.startswith(("https://", "http://")):
         raise ValueError("feed_url must be an HTTP or HTTPS URL")
-    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+    if not _is_finite_number(timeout) or timeout <= 0:
         raise ValueError("timeout must be greater than zero")
 
     request = Request(selected_url, headers={"Accept": "application/geo+json, application/json"})

@@ -13,6 +13,15 @@ from typing import Any, Mapping
 EARTH_RADIUS_KM = 6371.0088
 
 
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 @dataclass(frozen=True)
 class ImpactParameters:
     """Caller-supplied illustrative coefficients for the project heuristic.
@@ -28,7 +37,7 @@ class ImpactParameters:
 
     def __post_init__(self) -> None:
         values = (self.base_radius_km, self.magnitude_scale_km, self.depth_scale_km)
-        if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values):
+        if any(not _is_finite_number(value) for value in values):
             raise ValueError("impact parameters must be finite numbers")
         if self.base_radius_km < 0 or self.magnitude_scale_km < 0:
             raise ValueError("radius coefficients must not be negative")
@@ -39,7 +48,7 @@ class ImpactParameters:
 
 
 def _finite_number(value: Any, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if not _is_finite_number(value):
         raise ValueError(f"{name} must be a finite number")
     return float(value)
 
@@ -127,7 +136,9 @@ def estimate_impact(event: Mapping[str, Any], parameters: ImpactParameters) -> d
     magnitude = _finite_number(event.get("magnitude"), "magnitude")
     if magnitude < 0:
         raise ValueError("magnitude must not be negative")
-    raw_depth = event.get("depth_km", 0.0)
+    raw_depth = event.get("depth_km")
+    if raw_depth is None:
+        raw_depth = 0.0
     depth_km = _finite_number(raw_depth, "depth_km")
     if depth_km < 0:
         raise ValueError("depth_km must not be negative")

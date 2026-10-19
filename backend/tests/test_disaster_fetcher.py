@@ -13,7 +13,7 @@ def representative_feed():
             {
                 "type": "Feature",
                 "id": "us-test-123",
-                "properties": {"mag": 5.2, "place": "10 km north of Example", "time": 1_760_000_000_000},
+                "properties": {"mag": 5.2, "place": "10 km north of Example", "time": 1_760_000_000_000, "updated": 1_760_000_100_000},
                 "geometry": {"type": "Point", "coordinates": [-122.5, 37.7, 8.1]},
             }
         ],
@@ -43,9 +43,15 @@ class DisasterFetcherTests(unittest.TestCase):
             [
                 {
                     "id": "us-test-123",
+                    "source": "USGS",
+                    "source_id": "us-test-123",
                     "magnitude": 5.2,
                     "place": "10 km north of Example",
                     "timestamp_ms": 1_760_000_000_000,
+                    "timestamp_utc": "2025-10-09T08:53:20Z",
+                    "updated_ms": 1_760_000_100_000,
+                    "updated_utc": "2025-10-09T08:55:00Z",
+                    "depth_km": 8.1,
                     "coordinates": {"longitude": -122.5, "latitude": 37.7},
                 }
             ],
@@ -75,6 +81,47 @@ class DisasterFetcherTests(unittest.TestCase):
         with self.assertRaises(EarthquakeFeedError):
             parse_earthquake_feed(feed)
 
+    def test_rejects_non_finite_and_oversized_coordinates(self):
+        for longitude in (float("inf"), 10**10000):
+            feed = representative_feed()
+            feed["features"][0]["geometry"]["coordinates"] = [longitude, 37.7]
+            with self.subTest(longitude_type=type(longitude).__name__), self.assertRaises(EarthquakeFeedError):
+                parse_earthquake_feed(feed)
+
+    def test_preserves_missing_magnitude_and_optional_depth(self):
+        feed = representative_feed()
+        feed["features"][0]["properties"]["mag"] = None
+        feed["features"][0]["geometry"]["coordinates"] = [-122.5, 37.7]
+
+        event = parse_earthquake_feed(feed)[0]
+
+        self.assertIsNone(event["magnitude"])
+        self.assertIsNone(event["depth_km"])
+
+    def test_rejects_invalid_or_fractional_event_timestamps(self):
+        for timestamp in (float("nan"), float("inf"), 1_760_000_000_000.5, 10**30):
+            feed = representative_feed()
+            feed["features"][0]["properties"]["time"] = timestamp
+            with self.subTest(timestamp=timestamp), self.assertRaises(EarthquakeFeedError):
+                parse_earthquake_feed(feed)
+
+    def test_rejects_invalid_update_timestamp(self):
+        feed = representative_feed()
+        feed["features"][0]["properties"]["updated"] = "yesterday"
+
+        with self.assertRaises(EarthquakeFeedError):
+            parse_earthquake_feed(feed)
+
+    def test_missing_update_timestamp_falls_back_to_event_time(self):
+        feed = representative_feed()
+        del feed["features"][0]["properties"]["updated"]
+
+        event = parse_earthquake_feed(feed)[0]
+
+        self.assertEqual(event["updated_ms"], event["timestamp_ms"])
+        self.assertEqual(event["updated_utc"], event["timestamp_utc"])
+
+    def test_rejects_non_finite_coordinates(self):
         feed = representative_feed()
         feed["features"][0]["geometry"]["coordinates"] = [float("inf"), 37.7]
         with self.assertRaises(EarthquakeFeedError):

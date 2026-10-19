@@ -42,6 +42,18 @@ class ImpactEstimationTests(unittest.TestCase):
 
         self.assertEqual(estimate["center"], {"latitude": 12.0, "longitude": 34.0})
 
+    def test_missing_normalized_depth_uses_zero_depth_adjustment(self):
+        estimate = estimate_impact(
+            {
+                "magnitude": 4.0,
+                "depth_km": None,
+                "coordinates": {"latitude": 0.0, "longitude": 0.0},
+            },
+            PARAMETERS,
+        )
+
+        self.assertEqual(estimate["radius_km"], 30.0)
+
     def test_bounding_box_contains_ordinary_center_and_has_ordered_latitudes(self):
         estimate = estimate_impact(event(latitude=20, longitude=30), PARAMETERS)
         bounds = estimate["bounding_box"]
@@ -134,6 +146,7 @@ class ImpactEstimationTests(unittest.TestCase):
             event(latitude=float("nan")),
             event(longitude=float("inf")),
             event(magnitude=float("inf")),
+            event(magnitude=10**10000),
             event(magnitude=-1),
             event(depth_km=-1),
             event(depth_km=float("nan")),
@@ -149,6 +162,7 @@ class ImpactEstimationTests(unittest.TestCase):
             (0, 0, 1),
             (float("nan"), 1, 1),
             (1, float("inf"), 1),
+            (10**10000, 1, 1),
         ):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 ImpactParameters(*values)
