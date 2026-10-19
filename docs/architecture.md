@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-The Disaster Early Warning & Evacuation Alert Route System is a college project intended to explore how public disaster data could be processed and how emergency information might eventually be routed to people who need it. The initial source is the public USGS Earthquake GeoJSON feed. The current local milestone fetches and normalizes feed events and assigns a configurable, simplified risk label. It does not deploy AWS resources, issue official warnings, send notifications, identify shelters, or calculate routes.
+The Disaster Early Warning & Evacuation Alert Route System is a college project intended to explore how public disaster data could be processed and how emergency information might eventually be routed to people who need it. The initial source is the public USGS Earthquake GeoJSON feed. The current local implementation fetches and normalizes feed events, assigns a configurable simplified risk label, and can calculate a configurable preliminary geographic impact radius and bounding box. It does not deploy AWS resources, issue official warnings, send notifications, identify shelters, or calculate routes.
 
 ## Intended architecture
 
@@ -35,8 +35,9 @@ Amazon Location Service and SNS are future integrations in this diagram, not con
 
 1. For scheduled monitoring, EventBridge Scheduler invokes Lambda at a configured interval. Lambda requests a selected USGS GeoJSON feed, validates the response, normalizes event identifiers, magnitude, place, timestamp, and coordinates, and evaluates the configured heuristic.
 2. For manual or integration requests, an authorized client calls an API Gateway HTTPS endpoint. API Gateway validates and forwards the request to the processing Lambda; this invocation is independent of the scheduled trigger, though both can call shared processing logic.
-3. In later phases, eligible events could be compared with configurable geographic impact estimates and verified destination data. Candidate routes could be requested from Amazon Location Service, reviewed against hazard information and policy, and only then used to prepare notifications through SNS.
-4. The current implementation stops after local event normalization and heuristic classification. It does not estimate affected areas, select destinations, calculate routes, or notify anyone.
+3. The current local estimator can derive a preliminary radius from an event's magnitude and optional depth using caller-supplied coefficients. It produces a spherical-earth bounding envelope and uses great-circle distance for candidate membership. These are geometric calculations around an explicitly heuristic radius, not a model of shaking, damage, or affected populations.
+4. In later phases, estimates could be compared with verified destination data. Candidate routes could be requested from Amazon Location Service, reviewed against authoritative hazard information and policy, and only then used to prepare notifications through SNS.
+5. The current implementation does not select destinations, calculate routes, notify anyone, or claim that the estimated region is affected or unsafe.
 
 ## Error handling, observability, permissions, and security
 
@@ -50,4 +51,4 @@ Amazon Location Service and SNS are future integrations in this diagram, not con
 
 ## Initial implementation limitations
 
-The initial configurable magnitude-based risk heuristic is an educational placeholder, not an official warning, validated seismic-impact model, or evacuation recommendation. Magnitude alone does not characterize local shaking or risk. No geographic impact model, authoritative shelter inventory, hazard-aware route avoidance, notification consent, or operational response workflow exists. Feed outages, delayed updates, duplicate events, and changing event magnitudes also need explicit production handling. Human review and emergency-authority validation are required before any real-world use.
+The configurable magnitude-based risk label and impact-radius formula are educational placeholders, not official warnings, validated seismic-impact models, damage boundaries, or evacuation recommendations. The radius formula uses caller-provided base-radius, magnitude-scale, and depth-scale coefficients; these coefficients are not scientifically established thresholds. Magnitude and depth alone do not characterize local shaking, geology, population exposure, or risk. The bounding box and great-circle membership check describe geometry only. No authoritative shelter inventory, hazard-aware route avoidance, notification consent, or operational response workflow exists. Feed outages, delayed updates, duplicate events, and changing event magnitudes also need explicit production handling. Human review and emergency-authority validation are required before any real-world use.

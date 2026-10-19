@@ -6,7 +6,7 @@ This college project explores a serverless workflow that consumes public earthqu
 
 The objective is an auditable, testable educational prototype, not an official warning service. It must never claim that routes are safe or that a magnitude-only heuristic predicts local impact. Deployment for real emergencies requires current authoritative shelter and hazard data, hazard-aware routing, accessibility and capacity checks, and validation by emergency authorities.
 
-**Implemented in this repository now:** local Python standard-library fetching and normalization of USGS GeoJSON earthquake events; configurable heuristic risk classification; mocked unit tests. No AWS resources, routes, frontend, or notifications are implemented.
+**Implemented in this repository now:** local Python standard-library fetching and normalization of USGS GeoJSON earthquake events; configurable heuristic risk classification; configurable preliminary impact-radius and bounding-box estimation using spherical geometry; offline unit tests. No AWS resources, routes, frontend, or notifications are implemented.
 
 ## Objectives and requirements
 
@@ -15,7 +15,7 @@ The objective is an auditable, testable educational prototype, not an official w
 - Fetch a configurable USGS GeoJSON earthquake feed and validate its structure.
 - Normalize stable event identifiers, magnitude, place, timestamp, and longitude/latitude.
 - Apply an explicitly configurable and documented initial risk heuristic, separate from data acquisition.
-- In future phases, estimate geographic impact, select from verified eligible destinations, request candidate routes, and allow authorized operators to initiate reviewed notifications.
+- Estimate a preliminary geographic radius with caller-supplied heuristic coefficients and determine candidate proximity; later phases may incorporate authoritative impact data, verified destinations, candidate routes, and reviewed notifications.
 - Provide separate scheduled-monitoring and API Gateway request paths with shared, idempotent processing logic.
 - Record processing outcomes and prevent duplicate notifications on retries.
 
@@ -50,9 +50,11 @@ docs/
 backend/
   src/
     disaster_fetcher.py
+    impact_estimation.py
     risk_assessment.py
   tests/
     test_disaster_fetcher.py
+    test_impact_estimation.py
     test_risk_assessment.py
 frontend/  # future phase; create when an interface is approved
 ```
@@ -85,13 +87,15 @@ The current repository contains the root documentation and the listed backend mo
 
 **Acceptance criteria:** handles network failure, HTTP errors, invalid JSON, malformed structures, and missing/invalid fields; representative GeoJSON normalizes correctly; tests make no network requests; risk thresholds are configurable and identified as a non-scientific project heuristic.
 
-### Phase 4: Risk configuration and impact estimation (planned)
+### Phase 4: Risk configuration and impact estimation (partially implemented)
 
-**Deliverables:** reviewed configuration schema, explicit minimum-magnitude and other agreed thresholds, geographic impact estimation module, uncertainty representation, and test fixtures. Do not treat magnitude alone as a local impact model. Evaluate suitable authoritative shaking/intensity or hazard sources, data licensing, latency, coverage, and provenance before selecting an approach. Make thresholds versioned and configurable, not embedded in route/notification code.
+**Implemented deliverables:** local `impact_estimation.py` accepts the existing normalized event coordinate mapping (or top-level latitude/longitude), required magnitude, and optional depth. It computes a preliminary radius from explicitly supplied `base_radius_km`, `magnitude_scale_km`, and `depth_scale_km` coefficients, provides a spherical bounding box with antimeridian/pole handling, and checks candidates using haversine distance. Unit tests cover ordinary and boundary cases, invalid/non-finite inputs, poles, and longitude wrapping. This is an illustrative configurable heuristic, not a scientifically grounded model.
+
+**Remaining deliverables:** reviewed configuration schema, scientifically appropriate impact-model inputs, uncertainty representation, versioning/policy for calibrated thresholds, and evaluation of authoritative shaking/intensity or hazard sources, data licensing, latency, coverage, and provenance. Do not treat magnitude or the current radius formula as a local impact model.
 
 **AWS resources:** None initially; managed configuration storage is considered only if deployment requires it.
 
-**Acceptance criteria:** documented assumptions and uncertainty; deterministic tests for boundaries, invalid coordinates, stale data, and geographic edge cases; no scientific or official-warning claim without validation.
+**Acceptance criteria:** the current geometry and input validation are deterministic and tested; future impact-model assumptions, uncertainty, freshness, and provenance must also be tested and documented. No scientific or official-warning claim without appropriate validation.
 
 ### Phase 5: Destination-data and safety policy (planned)
 
@@ -155,7 +159,7 @@ Use an official USGS GeoJSON feed URL configured without credentials. Set a fini
 
 ### Risk and geographic impact
 
-Keep ingestion, risk classification, and later impact estimation separate. Configure and version magnitude thresholds and any additional policy inputs. The current magnitude heuristic is only a code/test milestone. Before geographic recommendations, select and validate authoritative shaking/intensity or hazard data; account for distance, depth, local conditions, uncertainty, data freshness, and model coverage. Fail closed or require human review when material inputs are missing.
+Keep ingestion, risk classification, and impact estimation separate. The implemented radius heuristic is `(base_radius_km + magnitude_scale_km * max(magnitude, 0)) / (1 + depth_km / depth_scale_km)`, with depth treated as zero when absent. Its coefficients are explicitly supplied by the caller and are demonstration parameters, not invented scientific thresholds. The bounding box uses a spherical Earth envelope; longitude bounds wrap at the antimeridian and expand to all longitudes when a pole is reached. Candidate membership uses great-circle haversine distance. These outputs identify geometry relative to the heuristic only. Before any geographic recommendation, select and validate authoritative shaking/intensity or hazard data; account for distance, depth, local conditions, uncertainty, data freshness, and model coverage. Fail closed or require human review when material inputs are missing.
 
 ### Destinations and routes
 
