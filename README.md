@@ -26,6 +26,20 @@ $env:PYTHONPATH = "backend/src"
 py -c "from disaster_fetcher import fetch_earthquakes; print(fetch_earthquakes())"
 ```
 
+A local end-to-end demonstration connecting fetching, quality filtering, heuristic risk assessment, and geographic impact estimation can be run via:
+
+```powershell
+$env:PYTHONPATH = "backend/src"
+py backend/src/demo.py
+```
+
+To run offline using representative sample data without network requests:
+
+```powershell
+$env:PYTHONPATH = "backend/src"
+py backend/src/demo.py --sample-data
+```
+
 The default feed is the USGS past-day all-earthquakes GeoJSON feed. Set `USGS_FEED_URL` to another USGS GeoJSON feed URL when needed. Network access is required only when calling the fetcher, not when running tests.
 
 Geographic estimation is available from `impact_estimation.py` and requires explicit `ImpactParameters` coefficients; no scientific threshold is implied. The current magnitude/depth formula is a project heuristic only. The fetcher's normalized event has latitude/longitude under `coordinates`; depth can be supplied as optional `depth_km`. No route safety, affected-area accuracy, shelter availability, or evacuation recommendation is established.
