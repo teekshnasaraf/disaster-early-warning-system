@@ -12,24 +12,22 @@ import demo
 
 class DemoTests(unittest.TestCase):
     def test_displays_processed_event_with_heuristic_labels(self):
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         event = {
             "id": "usgs-demo",
             "source": "USGS",
             "source_id": "usgs-demo",
             "magnitude": 5.2,
             "place": "Example region",
-            "timestamp_utc": "2026-10-19T12:00:00Z",
+            "timestamp_ms": now_ms,
+            "updated_ms": now_ms,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             "coordinates": {"longitude": -122.5, "latitude": 37.7},
             "depth_km": 8.0,
         }
         output = io.StringIO()
         with (
             patch.object(demo, "fetch_earthquakes", return_value=[event]),
-            patch.object(
-                demo,
-                "process_events",
-                return_value={"accepted": [event], "stale": [], "duplicates": [], "rejected": []},
-            ),
             redirect_stdout(output),
         ):
             status = demo.main([])
@@ -42,24 +40,22 @@ class DemoTests(unittest.TestCase):
         self.assertIn("No notifications", output.getvalue())
 
     def test_handles_missing_magnitude_without_claiming_low_risk(self):
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         event = {
             "id": "usgs-unknown",
             "source": "USGS",
             "source_id": "usgs-unknown",
             "magnitude": None,
             "place": "Unknown region",
-            "timestamp_utc": "2026-10-19T12:00:00Z",
+            "timestamp_ms": now_ms,
+            "updated_ms": now_ms,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             "coordinates": {"longitude": 1, "latitude": 2},
             "depth_km": None,
         }
         output = io.StringIO()
         with (
             patch.object(demo, "fetch_earthquakes", return_value=[event]),
-            patch.object(
-                demo,
-                "process_events",
-                return_value={"accepted": [event], "stale": [], "duplicates": [], "rejected": []},
-            ),
             redirect_stdout(output),
         ):
             status = demo.main([])

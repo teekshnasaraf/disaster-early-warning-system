@@ -9,9 +9,9 @@ import sys
 from typing import Any, Sequence
 
 from disaster_fetcher import EarthquakeFeedError, fetch_earthquakes, parse_earthquake_feed
-from event_quality import FreshnessPolicy, process_events
-from impact_estimation import ImpactParameters, estimate_impact
-from risk_assessment import explain_risk
+from earthquake_processing import ProcessingConfig, process_observations
+from event_quality import FreshnessPolicy
+from impact_estimation import ImpactParameters
 
 
 def representative_sample_events(reference_time: datetime | None = None) -> list[dict[str, Any]]:
@@ -144,41 +144,47 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         source_description = f"Live USGS feed ({args.feed_url or 'default past-day all-earthquakes'})"
 
-    quality = process_events(observations, policy=freshness_policy)
+    result = process_observations(
+        observations,
+        config=ProcessingConfig(
+            freshness_policy=freshness_policy,
+            impact_parameters=impact_parameters,
+        ),
+    )
     print("Local USGS earthquake processing demo")
     print("Risk labels and impact radii below are project heuristics, not validated predictions.")
     print("No notifications, AWS resources, destinations, or evacuation routes are involved.")
     print(f"Data source: {source_description}")
     print(
         "Records: "
-        f"{len(quality['accepted'])} accepted, {len(quality['stale'])} stale, "
-        f"{len(quality['duplicates'])} duplicates, {len(quality['rejected'])} rejected"
+        f"{result['summary']['accepted']} accepted, {result['summary']['stale']} stale, "
+        f"{result['summary']['duplicates']} duplicates, {result['summary']['rejected']} rejected"
     )
 
-    if not quality["accepted"]:
+    if not result["accepted"]:
         print("No fresh accepted events to display.")
         return 0
 
-    display_events = quality["accepted"][:args.limit]
-    for event in display_events:
+    display_events = result["accepted"][:args.limit]
+    for record in display_events:
+        event = record["event"]
         magnitude = event.get("magnitude")
         magnitude_text = f"{magnitude:.1f}" if isinstance(magnitude, (int, float)) else "unknown"
-        risk = explain_risk(magnitude)
+        risk = record["risk"]
         place = event.get("place", "Unknown location")
         event_time = event.get("timestamp_utc", "timestamp unavailable")
         print(f"\n{event.get('source_id', event.get('id', 'unknown-id'))}: {place}")
         print(f"  Observed: {event_time}; magnitude: {magnitude_text}")
         print(f"  Heuristic risk: {risk['level']} ({risk['reason']})")
 
-        try:
-            estimate = estimate_impact(event, impact_parameters)
-        except ValueError as error:
-            print(f"  Heuristic impact radius: unavailable ({error})")
+        estimate = record["impact"]
+        if estimate is None:
+            print(f"  Heuristic impact radius: unavailable ({record['impact_error']})")
         else:
             print(f"  Heuristic impact radius: approximately {estimate['radius_km']:.1f} km")
 
-    if len(quality["accepted"]) > len(display_events):
-        print(f"\nDisplayed {len(display_events)} of {len(quality['accepted'])} accepted events; use --limit to change this.")
+    if len(result["accepted"]) > len(display_events):
+        print(f"\nDisplayed {len(display_events)} of {len(result['accepted'])} accepted events; use --limit to change this.")
     return 0
 
 
