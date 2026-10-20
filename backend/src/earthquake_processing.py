@@ -11,6 +11,7 @@ from event_quality import FreshnessPolicy, process_events
 from impact_estimation import ImpactParameters, estimate_impact
 from regional_relevance import (
     DEFAULT_TAMIL_NADU_AREA,
+    REGIONAL_RELEVANCE_STATUSES,
     TamilNaduAssessmentArea,
     assess_tamil_nadu_relevance,
 )
@@ -127,6 +128,13 @@ def process_observations(
         "duplicates": len(quality["duplicates"]),
         "rejected": len(rejected),
         "risk_counts": risk_counts,
+        "regional_relevance_counts": {
+            status: sum(
+                item["regional_relevance"]["status"] == status
+                for item in accepted
+            )
+            for status in REGIONAL_RELEVANCE_STATUSES
+        },
         "impact_available": impact_available,
         "impact_unavailable": impact_unavailable,
     }

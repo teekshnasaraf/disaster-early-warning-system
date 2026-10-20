@@ -8,17 +8,22 @@ from disaster_fetcher import EarthquakeFeedError, parse_earthquake_feed
 from lambda_handler import LambdaConfig, LambdaFeedError, handler
 
 
-def current_observation():
+def current_observation(
+    magnitude=0,
+    latitude=-20.0,
+    longitude=-70.0,
+    source_id="usgs-lambda-test",
+):
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     return {
-        "id": "usgs-lambda-test",
+        "id": source_id,
         "source": "USGS",
-        "source_id": "usgs-lambda-test",
-        "magnitude": 0,
+        "source_id": source_id,
+        "magnitude": magnitude,
         "timestamp_ms": now_ms,
         "updated_ms": now_ms,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "coordinates": {"longitude": -70.0, "latitude": -20.0},
+        "coordinates": {"longitude": longitude, "latitude": latitude},
         "depth_km": 5.0,
     }
 
@@ -70,6 +75,15 @@ class LambdaHandlerTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["summary"]["received"], 1)
         self.assertEqual(result["summary"]["accepted"], 1)
+        self.assertEqual(
+            result["summary"]["regional_relevance_counts"],
+            {
+                "inside_assessment_area": 0,
+                "within_heuristic_radius": 0,
+                "outside_heuristic_radius": 1,
+                "unknown": 0,
+            },
+        )
         self.assertEqual(json.loads(json.dumps(result))["status"], "ok")
         self.assertEqual(len(captured.records), 1)
         self.assertNotIn("attacker.example", captured.output[0])
@@ -130,6 +144,103 @@ class LambdaHandlerTests(unittest.TestCase):
         ):
             with self.subTest(environ=environ), self.assertRaises(ValueError):
                 LambdaConfig.from_environment(environ)
+
+    def test_alerts_are_disabled_by_default(self):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch(
+                "lambda_handler.fetch_earthquakes",
+                return_value=[
+                    current_observation(magnitude=7.0, latitude=10.0, longitude=78.0)
+                ],
+            ),
+            patch("lambda_handler._publish_sns") as publish,
+            self.assertLogs("lambda_handler", level="INFO"),
+        ):
+            result = handler({}, None)
+
+        self.assertFalse(LambdaConfig.from_environment().alerts_enabled)
+        self.assertEqual(result["status"], "ok")
+        publish.assert_not_called()
+
+    def test_enabled_alert_requires_topic_configuration(self):
+        with (
+            patch.dict(os.environ, {"ALERTS_ENABLED": "true"}, clear=True),
+            patch("lambda_handler.fetch_earthquakes") as fetch,
+        ):
+            with self.assertRaisesRegex(ValueError, "SNS_TOPIC_ARN is required"):
+                handler({}, None)
+
+        fetch.assert_not_called()
+
+    def test_alert_eligibility_requires_configured_magnitude_and_region(self):
+        observations = [
+            current_observation(
+                magnitude=5.9,
+                latitude=10.0,
+                longitude=78.0,
+                source_id="below-threshold",
+            ),
+            current_observation(
+                magnitude=7.0,
+                latitude=-20.0,
+                longitude=-70.0,
+                source_id="outside-region",
+            ),
+            current_observation(
+                magnitude=6.0,
+                latitude=10.0,
+                longitude=78.0,
+                source_id="eligible",
+            ),
+        ]
+        environment = {
+            "ALERTS_ENABLED": "true",
+            "SNS_TOPIC_ARN": "arn:aws:sns:ap-south-1:123456789012:alerts",
+            "ALERT_MIN_MAGNITUDE": "6.0",
+            "ALERT_RELEVANCE_STATUSES": "inside_assessment_area",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch("lambda_handler.fetch_earthquakes", return_value=observations),
+            patch("lambda_handler._publish_sns") as publish,
+            self.assertLogs("lambda_handler", level="INFO"),
+        ):
+            result = handler({}, None)
+
+        self.assertEqual(result["summary"]["accepted"], 3)
+        publish.assert_called_once()
+        topic_arn, subject, message = publish.call_args.args
+        self.assertEqual(topic_arn, environment["SNS_TOPIC_ARN"])
+        self.assertEqual(
+            subject,
+            "Academic Demo: Tamil Nadu earthquake relevance",
+        )
+        payload = json.loads(message)
+        self.assertEqual(payload["alert_type"], "academic_demonstration")
+        self.assertIn("NOT AN OFFICIAL EMERGENCY WARNING", payload["disclaimer"])
+        self.assertEqual(payload["magnitude"], 6.0)
+
+    def test_sns_publishing_failure_is_surfaced(self):
+        environment = {
+            "ALERTS_ENABLED": "true",
+            "SNS_TOPIC_ARN": "arn:aws:sns:ap-south-1:123456789012:alerts",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch(
+                "lambda_handler.fetch_earthquakes",
+                return_value=[
+                    current_observation(magnitude=6.0, latitude=10.0, longitude=78.0)
+                ],
+            ),
+            patch(
+                "lambda_handler._publish_sns",
+                side_effect=RuntimeError("SNS unavailable"),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "SNS unavailable"):
+                handler({}, None)
 
 
 if __name__ == "__main__":

@@ -55,6 +55,12 @@ class EarthquakeProcessingTests(unittest.TestCase):
                 "duplicates": 1,
                 "rejected": 2,
                 "risk_counts": {"low": 1, "moderate": 1, "high": 0, "unknown": 1},
+                "regional_relevance_counts": {
+                    "inside_assessment_area": 0,
+                    "within_heuristic_radius": 0,
+                    "outside_heuristic_radius": 2,
+                    "unknown": 1,
+                },
                 "impact_available": 2,
                 "impact_unavailable": 1,
             },

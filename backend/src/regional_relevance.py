@@ -9,6 +9,14 @@ from typing import Any
 
 from impact_estimation import ImpactParameters, estimate_impact, haversine_distance_km
 
+REGIONAL_RELEVANCE_STATUSES = (
+    "inside_assessment_area",
+    "within_heuristic_radius",
+    "outside_heuristic_radius",
+    "unknown",
+)
+ALERTABLE_REGIONAL_RELEVANCE_STATUSES = frozenset(REGIONAL_RELEVANCE_STATUSES[:2])
+
 
 @dataclass(frozen=True)
 class TamilNaduAssessmentArea:
