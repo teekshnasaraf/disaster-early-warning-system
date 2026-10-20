@@ -6,7 +6,7 @@ This college project explores a serverless workflow that consumes public earthqu
 
 The objective is an auditable, testable educational prototype, not an official warning service. It must never claim that routes are safe or that a magnitude-only heuristic predicts local impact. Deployment for real emergencies requires current authoritative shelter and hazard data, hazard-aware routing, accessibility and capacity checks, and validation by emergency authorities.
 
-**Implemented in this repository now:** local Python standard-library fetching and normalization of USGS GeoJSON observations with source IDs, integer epoch-millisecond and UTC ISO-8601 timestamps, and optional depth; configurable freshness and duplicate policy; separate explainable heuristic risk classification; configurable preliminary impact-radius and bounding-box estimation using spherical geometry; offline unit tests. No AWS resources, routes, frontend, or notifications are implemented.
+**Implemented in this repository now:** local Python standard-library fetching and normalization of USGS GeoJSON observations with source IDs, integer epoch-millisecond and UTC ISO-8601 timestamps, and optional depth; configurable freshness and duplicate policy; separate explainable heuristic risk classification; configurable preliminary impact-radius and bounding-box estimation using spherical geometry; a validated in-memory destination data contract/catalog; an injectable routing-provider interface that reports when no provider is configured; offline unit tests. No route provider, real destination inventory, AWS resources, frontend, or notifications are implemented.
 
 ## Objectives and requirements
 
@@ -17,6 +17,8 @@ The objective is an auditable, testable educational prototype, not an official w
 - Track observation source identity and UTC event/update timestamps; explicitly report stale, duplicate, and rejected records using configurable policy.
 - Apply an explicitly configurable and documented initial risk heuristic, separate from data acquisition.
 - Produce explainable risk results; missing magnitude must remain unknown rather than low.
+- Validate designated destination records, retain unknown capacity/availability/provenance/freshness explicitly, and reject duplicate destination identifiers.
+- Define a provider boundary for candidate-route requests without claiming a route exists or is safe when no routing provider is configured.
 - Estimate a preliminary geographic radius with caller-supplied heuristic coefficients and determine candidate proximity; later phases may incorporate authoritative impact data, verified destinations, candidate routes, and reviewed notifications.
 - Provide separate scheduled-monitoring and API Gateway request paths with shared, idempotent processing logic.
 - Record processing outcomes and prevent duplicate notifications on retries.
@@ -53,9 +55,12 @@ backend/
   src/
     disaster_fetcher.py
     event_quality.py
+    evacuation_destinations.py
     impact_estimation.py
     risk_assessment.py
+    routing.py
   tests/
+    test_evacuation_destinations.py
     test_disaster_fetcher.py
     test_event_quality.py
     test_impact_estimation.py
@@ -109,21 +114,25 @@ The current repository contains the root documentation and the listed backend mo
 
 **Acceptance criteria:** deterministic offline tests cover stale boundaries, source-scoped duplicate IDs, update-version selection, missing identities/timestamps, invalid/future timestamps, malformed records, and explainable unknown risk. No magnitude-only result is presented as proof of damage, imminent danger, or route safety.
 
-### Phase 5: Destination-data and safety policy (planned)
+### Phase 5: Destination-data and safety policy (partially implemented)
 
-**Deliverables:** destination data contract and ingestion/maintenance process including authoritative source, coordinates, capacity, operating status, accessibility, services, update timestamp, provenance, and contact/verification owner; exclusion rules for closed, stale, full, or unverified sites.
+**Implemented deliverables:** `evacuation_destinations.py` provides validated coordinates, destination identity/name/type, optional non-negative capacity, tri-state availability (`True`, `False`, or `None` for unknown), data-source label, and an optional timezone-aware update timestamp. The in-memory catalog rejects duplicate identifiers. Missing capacity/availability/update time and unknown provenance remain explicitly unknown; structural validation does not verify source reliability or the truth of supplied values. Tests use clearly labeled fictional records only; no real centres are included.
 
-**AWS resources:** select a low-cost storage option only after data ownership, freshness, and access requirements are understood.
+**Remaining deliverables:** authoritative destination data ownership and ingestion/refresh process, verification contact, accessibility/services/eligibility, data freshness policy, and exclusion policy for stale or unverified sites. Unknown availability must not be presented as available.
 
-**Acceptance criteria:** no destination is presented as available without a freshness and verification policy; missing or stale data fails closed; emergency-authority review defines operational ownership.
+**AWS resources:** None for the current in-memory contract. Select a low-cost storage option only after data ownership, freshness, and access requirements are understood.
 
-### Phase 6: Candidate routing with Amazon Location Service (planned)
+**Acceptance criteria:** implemented records reject invalid coordinates/metadata and duplicate identifiers; tests cover unknown and unavailable status. Before operational use, no destination may be presented as available without a freshness and verification policy, missing or stale operational data must fail closed, and emergency-authority review must define ownership.
 
-**Deliverables:** isolated routing adapter, candidate-route response contract, distance/travel estimates, and tests using mocked service responses. Compare routes with hazard/closure information and clearly label unresolved hazards. Location Service calculates candidate routes; it does not certify that a route avoids active hazards or is safe. Include accessibility and transport-mode assumptions.
+### Phase 6: Candidate routing with Amazon Location Service (partially implemented)
 
-**AWS resources:** Amazon Location Service resources/configuration and narrowly scoped Lambda IAM permissions after account, region, pricing, data-provider, and policy review.
+**Implemented deliverables:** `routing.py` defines a `RoutingProvider` protocol and `request_candidate_route()` boundary. With no provider configured, requests raise `RoutingProviderUnavailableError`; the application calculates no route. It also refuses a destination explicitly marked unavailable. Tests verify both conditions. No AWS credentials or third-party dependencies are required.
 
-**Acceptance criteria:** candidate routes are never described as guaranteed safe; unavailable hazard/closure data blocks or visibly qualifies recommendations; test service failures, no-route responses, and malformed data; estimate and monitor request costs.
+**Remaining deliverables:** Amazon Location Service adapter and candidate-route response contract, distance/travel estimates, and tests using mocked service responses. Compare routes with authoritative hazard/closure information and clearly label unresolved hazards. Location Service calculates candidate routes; it does not certify that a route avoids active hazards or is safe. Include accessibility and transport-mode assumptions.
+
+**AWS resources:** None for the implemented interface. Amazon Location Service resources/configuration and narrowly scoped Lambda IAM permissions only after account, region, pricing, data-provider, and policy review.
+
+**Acceptance criteria:** implemented behavior explicitly reports no route when no provider is configured and does not request a route for a destination marked unavailable. Future candidate routes are never described as guaranteed safe; unavailable hazard/closure data blocks or visibly qualifies recommendations; test service failures, no-route responses, and malformed data; estimate and monitor request costs.
 
 ### Phase 7: AWS processing service and scheduled monitoring (planned)
 
@@ -175,7 +184,7 @@ Keep source observations, freshness/deduplication decisions, risk classification
 
 ### Destinations and routes
 
-Obtain destination data from accountable authorities; record provenance and refresh/status dates. Model capacity, operating status, accessibility, services, and eligibility. Amazon Location Service can calculate candidate routes between coordinates, but it does not make a route hazard-aware or certify safety. Route screening requires current authoritative closures/hazards and human emergency-policy review. Label routes as candidates and provide a fallback to official guidance when data is incomplete.
+The local destination record validates structure only; it does not obtain, verify, or refresh destinations. Its optional capacity and availability values default to unknown, as do update timestamps and provenance when absent. Test fixtures are fictional. Obtain operational data from accountable authorities and record provenance and refresh/status dates. Amazon Location Service is not connected; the local routing interface raises an explicit error when no provider is injected. A future adapter may calculate candidate routes between coordinates, but this does not make a route hazard-aware or certify safety. Route screening requires current authoritative closures/hazards and human emergency-policy review. Label routes as candidates and provide a fallback to official guidance when data is incomplete.
 
 ### Notifications
 

@@ -1,6 +1,6 @@
 # Disaster Early Warning & Evacuation Alert Route System
 
-A college project exploring an early-warning and evacuation-support workflow, starting with public USGS earthquake data. The repository currently contains local earthquake-feed processing, an educational risk heuristic, and a configurable preliminary geographic impact estimate. It does not send alerts, calculate evacuation routes, or connect to AWS.
+A college project exploring an early-warning and evacuation-support workflow, starting with public USGS earthquake data. The repository currently contains local earthquake-feed processing, an educational risk heuristic, a configurable preliminary geographic impact estimate, a validated destination data contract, and a routing-provider boundary. It has no real destination inventory, configured routing provider, AWS integration, or alert delivery.
 
 ## Current milestone
 
@@ -8,6 +8,8 @@ A college project exploring an early-warning and evacuation-support workflow, st
 - Configurable, explicitly heuristic risk classification with a rule/reason result; missing magnitude is `unknown`, not low.
 - Configurable freshness filtering and source-scoped duplicate resolution for normalized events.
 - Configurable preliminary impact-radius estimate, bounding box, and candidate-distance check. This is not a validated damage boundary or safety recommendation.
+- A validated destination record/catalog contract with strict coordinate and metadata validation. Unknown capacity, availability, provenance, and update time remain unknown; test fixtures are explicitly fictional.
+- An injectable candidate-routing interface. No routing provider is configured, so route requests fail explicitly; Amazon Location Service integration remains planned.
 - Unit tests using mocked HTTP responses; no live API access is needed to run tests.
 
 ## Setup and tests
@@ -48,9 +50,13 @@ The fetcher represents USGS `time` and `updated` as integer epoch milliseconds a
 
 `explain_risk()` returns a classification, rule identifier, reason, inputs, and thresholds separately from the observed event. A missing magnitude returns `unknown`. The legacy `assess_risk()` function remains available and still requires a valid magnitude.
 
+`evacuation_destinations.py` defines validated geographic coordinates, destination records, and an in-memory catalog that rejects duplicate identifiers. Capacity and availability are optional and default to `None` (unknown); provenance defaults to `"unknown"` and the update timestamp defaults to `None`. These fields are not verified by the model. The only destination examples are clearly fictional test fixtures, not real evacuation centres.
+
+`routing.py` defines an injectable boundary for requesting a candidate route from an origin to a designated destination. No provider is configured: requesting a route without one raises `RoutingProviderUnavailableError` and does not return a route. Amazon Location Service is a future adapter, not an implemented integration. Even a future provider route would not establish destination availability, account for unreported hazards or closures, or guarantee safety. The impact heuristic is not used to select destinations or infer route safety.
+
 ## Project documentation
 
 - [Architecture](docs/architecture.md)
 - [Complete implementation plan](docs/implementation-plan.md)
 
-The frontend is a future phase and is intentionally not scaffolded yet. AWS resources and integrations are also planned, not implemented.
+The frontend is a future phase and is intentionally not scaffolded yet. AWS resources, Amazon Location Service integration, real destination data, and notifications are planned, not implemented.

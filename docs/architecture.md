@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-The Disaster Early Warning & Evacuation Alert Route System is a college project intended to explore how public disaster data could be processed and how emergency information might eventually be routed to people who need it. The initial source is the public USGS Earthquake GeoJSON feed. The current local implementation fetches and normalizes observations with source identifiers and UTC timestamps, applies configurable freshness and duplicate handling, produces a separate explainable heuristic risk result, and can calculate a separate preliminary geographic impact radius and bounding box. It does not deploy AWS resources, issue official warnings, send notifications, identify shelters, or calculate routes.
+The Disaster Early Warning & Evacuation Alert Route System is a college project intended to explore how public disaster data could be processed and how emergency information might eventually be routed to people who need it. The initial source is the public USGS Earthquake GeoJSON feed. The current local implementation fetches and normalizes observations with source identifiers and UTC timestamps, applies configurable freshness and duplicate handling, produces a separate explainable heuristic risk result, and can calculate a separate preliminary geographic impact radius and bounding box. It also defines a validated destination record/catalog contract and an injectable candidate-routing provider interface. It contains no real destination inventory and has no configured routing provider; it does not deploy AWS resources, issue official warnings, or send notifications.
 
 ## Intended architecture
 
@@ -12,13 +12,14 @@ flowchart LR
     EB -->|invoke| Lambda[AWS Lambda: fetch, normalize, assess]
     Client[Operator or integration client] -->|HTTPS request| APIGW[Amazon API Gateway]
     APIGW -->|invoke| Lambda
-    Lambda -->|candidate route request, future phase| Location[Amazon Location Service]
+    Lambda -.->|future adapter; not configured| Routing[Local routing-provider interface]
+    Routing -.->|future integration| Location[Amazon Location Service]
     Lambda -->|alert request, future phase| SNS[Amazon SNS]
     Lambda -->|structured logs| Logs[Amazon CloudWatch Logs]
     SafeSites[Verified safe-destination dataset, future phase] -->|candidate destinations| Lambda
 ```
 
-Amazon Location Service and SNS are future integrations in this diagram, not configured resources. Actual routes and destinations would need validated data and emergency-authority review; this system cannot guarantee a safe evacuation route.
+The dashed routing adapter and Amazon Location Service integration are future work, not configured resources. The local interface currently fails explicitly when no provider is supplied. Destination records are a data contract only; no real destinations are included. Actual routes and destinations would need current validated data and emergency-authority review; no route can be guaranteed safe.
 
 ## Service and data-source responsibilities
 
@@ -30,6 +31,8 @@ Amazon Location Service and SNS are future integrations in this diagram, not con
 - **Amazon SNS:** Future delivery mechanism for approved notification messages to configured subscribers. No real notifications are sent in the current milestone.
 - **Amazon CloudWatch Logs:** Intended location for operational logs and metrics from AWS components. Logs must avoid credentials and unnecessary personal data.
 - **Verified safe-destination dataset:** A future maintained source of shelter/destination coordinates, capacity, operating status, accessibility, and provenance. It is not currently available or implemented.
+- **Local destination contract:** `evacuation_destinations.py` validates coordinate ranges, required identity/name/type, optional capacity/availability, data source, and timezone-aware update timestamps. Unknown optional values are represented as `None`, with `"unknown"` as the default data-source label. The in-memory catalog rejects duplicate identifiers. It verifies structure, not the truth or reliability of supplied data; test fixtures are fictional and are not a destination inventory.
+- **Local routing boundary:** `routing.py` accepts a provider implementing the `RoutingProvider` protocol and raises `RoutingProviderUnavailableError` if no provider is configured. No Amazon Location Service adapter or route calculation is implemented. Provider output would be a candidate route response only, not a safe-route determination.
 
 ## Data flow
 
@@ -37,8 +40,9 @@ Amazon Location Service and SNS are future integrations in this diagram, not con
 2. For manual or integration requests, an authorized client calls an API Gateway HTTPS endpoint. API Gateway validates and forwards the request to the processing Lambda; this invocation is independent of the scheduled trigger, though both can call shared processing logic.
 3. Local processing keeps observed event fields separate from derived outputs. `explain_risk()` returns a rule, reason, thresholds, and `low`/`moderate`/`high`/`unknown` label without mutating the observation. Missing magnitude is unknown, not low. The independent impact estimator returns its own explicitly heuristic radius/bounding box; it is not merged into or represented as observed data.
 4. After fetching, callers may pass normalized observations to the separate local freshness processor. It uses UTC-aware processing time and an explicit age limit. Freshness is based on event origin time; duplicate selection uses the newest catalogue update time, falling back to event time. It reports accepted, stale, duplicate, and rejected records separately. Invalid timestamps are rejected, not interpreted as fresh. This processor is not yet wired into an AWS handler or the fetch function.
-5. In later phases, estimates could be compared with verified destination data. Candidate routes could be requested from Amazon Location Service, reviewed against authoritative hazard information and policy, and only then used to prepare notifications through SNS.
-6. The current implementation does not select destinations, calculate routes, notify anyone, or claim that the estimated region is affected or unsafe.
+5. Callers may construct and validate destination records, but the application has no ingestion process or real destination data source. Unknown capacity or availability is not inferred from event data or impact estimates.
+6. The current routing interface cannot calculate a route without an injected provider. Amazon Location Service is a future adapter; any resulting candidate route would still need review against current authoritative hazard information and policy before it could be considered for an operational workflow.
+7. The current implementation does not select destinations, calculate routes, notify anyone, or claim that the estimated region is affected or unsafe.
 
 ## Error handling, observability, permissions, and security
 
@@ -52,4 +56,4 @@ Amazon Location Service and SNS are future integrations in this diagram, not con
 
 ## Initial implementation limitations
 
-The configurable magnitude-based risk label and impact-radius formula are educational placeholders, not official warnings, validated seismic-impact models, damage boundaries, or evacuation recommendations. The radius formula uses caller-provided base-radius, magnitude-scale, and depth-scale coefficients; these coefficients are not scientifically established thresholds. Magnitude and depth alone do not characterize local shaking, geology, population exposure, or risk. The bounding box and great-circle membership check describe geometry only. Freshness and duplicate policies are configurable application rules, not scientific criteria; the default age limit can exclude revised records for old events, while the in-memory processor does not persist deduplication state across runs. No authoritative shelter inventory, hazard-aware route avoidance, notification consent, or operational response workflow exists. Feed outages, delayed updates, and changing event magnitudes need additional operational handling. Human review and emergency-authority validation are required before any real-world use.
+The configurable magnitude-based risk label and impact-radius formula are educational placeholders, not official warnings, validated seismic-impact models, damage boundaries, or evacuation recommendations. The radius formula uses caller-provided base-radius, magnitude-scale, and depth-scale coefficients; these coefficients are not scientifically established thresholds. Magnitude and depth alone do not characterize local shaking, geology, population exposure, or risk. The bounding box and great-circle membership check describe geometry only. The destination model validates record shape, not source authority, freshness policy, operating status, capacity accuracy, accessibility, or safety; unknown values must not be treated as available. The routing boundary is not connected to a provider and calculates no routes. Even future provider routes will not be hazard-aware or certified safe without separate authoritative hazard/closure screening and review. Freshness and duplicate policies are configurable application rules, not scientific criteria; the default age limit can exclude revised records for old events, while the in-memory processor does not persist deduplication state across runs. No authoritative shelter inventory, hazard-aware route avoidance, notification consent, or operational response workflow exists. Feed outages, delayed updates, and changing event magnitudes need additional operational handling. Human review and emergency-authority validation are required before any real-world use.
