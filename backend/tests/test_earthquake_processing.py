@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import unittest
 
+from disaster_fetcher import parse_earthquake_feed
 from earthquake_processing import ProcessingConfig, process_observations
 
 
@@ -76,6 +77,54 @@ class EarthquakeProcessingTests(unittest.TestCase):
         self.assertEqual(result["summary"]["accepted"], 0)
         self.assertEqual(result["summary"]["rejected"], 1)
         self.assertIn("must not be negative", result["rejected"][0]["reason"])
+
+    def test_negative_record_from_feed_is_rejected_alongside_valid_records(self):
+        timestamp_ms = int(NOW.timestamp() * 1000)
+        payload = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": source_id,
+                    "properties": {
+                        "mag": magnitude,
+                        "place": "Test location",
+                        "time": timestamp_ms,
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-70.0, -20.0, 8.0],
+                    },
+                }
+                for source_id, magnitude in (("negative", -0.4), ("valid", 4.2))
+            ],
+        }
+
+        result = process_observations(parse_earthquake_feed(payload), now=NOW)
+
+        self.assertEqual(result["summary"]["received"], 2)
+        self.assertEqual(result["summary"]["accepted"], 1)
+        self.assertEqual(result["summary"]["rejected"], 1)
+        self.assertEqual(result["accepted"][0]["event"]["source_id"], "valid")
+        self.assertEqual(result["accepted"][0]["risk"]["level"], "moderate")
+        self.assertEqual(result["rejected"][0]["source_id"], "negative")
+        self.assertIn("must not be negative", result["rejected"][0]["reason"])
+        json.dumps(result, allow_nan=False)
+
+    def test_all_negative_records_are_rejected_with_serializable_summary(self):
+        result = process_observations(
+            [
+                observation("negative-one", magnitude=-0.1),
+                observation("negative-two", magnitude=-1.0),
+            ],
+            now=NOW,
+        )
+
+        self.assertEqual(result["summary"]["received"], 2)
+        self.assertEqual(result["summary"]["accepted"], 0)
+        self.assertEqual(result["summary"]["rejected"], 2)
+        self.assertEqual(len(result["rejected"]), 2)
+        json.dumps(result, allow_nan=False)
 
     def test_zero_and_positive_magnitudes_are_processed(self):
         result = process_observations(

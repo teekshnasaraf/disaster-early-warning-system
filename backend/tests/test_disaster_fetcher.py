@@ -81,13 +81,8 @@ class DisasterFetcherTests(unittest.TestCase):
         with self.assertRaises(EarthquakeFeedError):
             parse_earthquake_feed(feed)
 
-    def test_rejects_negative_magnitude_but_accepts_zero_and_positive(self):
-        negative_feed = representative_feed()
-        negative_feed["features"][0]["properties"]["mag"] = -0.1
-        with self.assertRaisesRegex(EarthquakeFeedError, "negative magnitude"):
-            parse_earthquake_feed(negative_feed)
-
-        for magnitude in (0, 3.2):
+    def test_preserves_finite_negative_zero_and_positive_magnitudes(self):
+        for magnitude in (-0.1, 0, 3.2):
             feed = representative_feed()
             feed["features"][0]["properties"]["mag"] = magnitude
             with self.subTest(magnitude=magnitude):

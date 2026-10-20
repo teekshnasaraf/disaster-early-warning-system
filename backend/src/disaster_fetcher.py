@@ -43,8 +43,6 @@ def _normalize_event(feature: Any) -> dict[str, Any]:
     magnitude = properties.get("mag")
     if magnitude is not None and not _is_finite_number(magnitude):
         raise EarthquakeFeedError(f"Earthquake event {event_id} has an invalid magnitude")
-    if magnitude is not None and magnitude < 0:
-        raise EarthquakeFeedError(f"Earthquake event {event_id} has a negative magnitude")
 
     timestamp = properties.get("time")
     if (
