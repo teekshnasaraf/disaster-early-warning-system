@@ -54,6 +54,12 @@ The fetcher represents USGS `time` and `updated` as integer epoch milliseconds a
 
 `routing.py` defines an injectable boundary for requesting a candidate route from an origin to a designated destination. No provider is configured: requesting a route without one raises `RoutingProviderUnavailableError` and does not return a route. Amazon Location Service is a future adapter, not an implemented integration. Even a future provider route would not establish destination availability, account for unreported hazards or closures, or guarantee safety. The impact heuristic is not used to select destinations or infer route safety.
 
+## Destination source research
+
+The intended region is Tamil Nadu, India, and the requested records are pre-designated facilities. The official [Cuddalore District disaster-management page](https://cuddalore.nic.in/disaster-management/) links its [2025 District Disaster Management Plan, Part I](https://cdn.s3waas.gov.in/s3a96b65a721e561e1e3de768ac819ffbb/uploads/2025/08/17556024033256.pdf). The plan includes named evacuation-site tables for Cuddalore District, but it is a PDF, not a statewide structured inventory. The reviewed tables do not provide verified coordinates, per-site capacity, or per-site operating status; an annual plan edition does not establish a live status-update cadence. A dataset license or reuse terms were not confirmed.
+
+This district plan is a lead for follow-up with the responsible authorities, not a validated operational feed. No Tamil Nadu-wide site-level inventory, machine-readable API/download, coordinates, capacity, operating-status source, or reuse terms have been verified. No source adapter or real destination records are implemented. Obtain an authoritative statewide inventory or separately verified district sources, including provenance, coordinate validation, update cadence, status ownership, and usage terms, before integrating destinations.
+
 ## Project documentation
 
 - [Architecture](docs/architecture.md)
