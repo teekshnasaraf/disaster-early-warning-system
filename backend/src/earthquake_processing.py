@@ -9,6 +9,11 @@ from typing import Any, Iterable, Mapping
 
 from event_quality import FreshnessPolicy, process_events
 from impact_estimation import ImpactParameters, estimate_impact
+from regional_relevance import (
+    DEFAULT_TAMIL_NADU_AREA,
+    TamilNaduAssessmentArea,
+    assess_tamil_nadu_relevance,
+)
 from risk_assessment import RiskThresholds, explain_risk
 
 
@@ -25,6 +30,9 @@ class ProcessingConfig:
             depth_scale_km=10.0,
         )
     )
+    tamil_nadu_area: TamilNaduAssessmentArea = field(
+        default_factory=lambda: DEFAULT_TAMIL_NADU_AREA
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.freshness_policy, FreshnessPolicy):
@@ -33,6 +41,8 @@ class ProcessingConfig:
             raise ValueError("risk_thresholds must be a RiskThresholds")
         if not isinstance(self.impact_parameters, ImpactParameters):
             raise ValueError("impact_parameters must be an ImpactParameters")
+        if not isinstance(self.tamil_nadu_area, TamilNaduAssessmentArea):
+            raise ValueError("tamil_nadu_area must be a TamilNaduAssessmentArea")
 
 
 def _source_id(event: Mapping[str, Any]) -> str | None:
@@ -102,6 +112,11 @@ def process_observations(
                 "risk": risk,
                 "impact": impact,
                 "impact_error": impact_error,
+                "regional_relevance": assess_tamil_nadu_relevance(
+                    serialized_event,
+                    config.impact_parameters,
+                    config.tamil_nadu_area,
+                ),
             }
         )
 

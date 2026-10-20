@@ -15,6 +15,7 @@ EXPECTED_MODULES = {
     "event_quality.py",
     "impact_estimation.py",
     "lambda_handler.py",
+    "regional_relevance.py",
     "risk_assessment.py",
 }
 
@@ -73,7 +74,7 @@ class LambdaPackageTests(unittest.TestCase):
                     "-c",
                     (
                         "import disaster_fetcher, earthquake_processing, event_quality, "
-                        "impact_estimation, lambda_handler, risk_assessment; "
+                        "impact_estimation, lambda_handler, regional_relevance, risk_assessment; "
                         "assert callable(lambda_handler.handler)"
                     ),
                 ],

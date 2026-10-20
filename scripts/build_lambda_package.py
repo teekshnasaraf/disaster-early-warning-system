@@ -17,6 +17,7 @@ PACKAGE_MODULES = (
     "event_quality.py",
     "impact_estimation.py",
     "lambda_handler.py",
+    "regional_relevance.py",
     "risk_assessment.py",
 )
 FIXED_ZIP_TIMESTAMP = (2020, 1, 1, 0, 0, 0)

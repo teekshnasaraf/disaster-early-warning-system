@@ -142,6 +142,20 @@ class EarthquakeProcessingTests(unittest.TestCase):
             ["low", "low"],
         )
 
+    def test_regional_relevance_is_separate_from_risk_classification(self):
+        event = observation("near-tamil-nadu", magnitude=3.0)
+        event["coordinates"] = {"latitude": 10.0, "longitude": 80.5}
+
+        result = process_observations([event], now=NOW)
+        accepted = result["accepted"][0]
+
+        self.assertEqual(accepted["risk"]["level"], "low")
+        self.assertEqual(
+            accepted["regional_relevance"]["status"],
+            "within_heuristic_radius",
+        )
+        self.assertNotIn("tamil_nadu", accepted["risk"])
+
     def test_invalid_individual_mapping_is_reported_without_hiding_valid_records(self):
         valid = observation("valid")
         result = process_observations(
